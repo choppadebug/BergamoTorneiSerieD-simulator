@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#142c36">
+  <title>Bergamo Tornei Serie D · Season simulator</title>
+  <link rel="stylesheet" href="styles.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/chart.js@4.5.1/dist/chart.umd.min.js"></script>
+  <script defer src="app.js"></script>
+</head>
+<body>
+  <header><div class="brand-mark" aria-hidden="true">BT</div><div><strong>BERGAMO TORNEI</strong><span>Serie D · 7-a-side football</span></div><span class="header-note">Season simulator</span></header>
+  <main>
+    <section class="intro"><p class="eyebrow">THE SEASON, IN PERSPECTIVE</p><h1>What will it take<br>to finish at the top?</h1><p>Explore thousands of possible seasons. Find the points ranges behind every position.</p></section>
+    <div class="layout">
+      <aside class="panel controls"><form id="simulation-form">
+        <div class="section-title"><span class="step">01</span><h2>Shape the season</h2></div>
+        <fieldset id="settings"><legend class="sr-only">Simulation settings</legend>
+          <label for="simulations">Simulated seasons <output id="simulations-value"></output></label><input id="simulations" type="range" min="1000" max="50000" step="1000" value="10000">
+          <label for="teams">Teams <output id="teams-value"></output></label><input id="teams" type="range" min="4" max="24" value="11">
+          <label for="legs">Legs <output id="legs-value"></output></label><input id="legs" type="range" min="1" max="4" value="2">
+          <p id="format-summary" class="hint"></p>
+          <label for="draw">Baseline draw probability <output id="draw-value"></output></label><input id="draw" type="range" min="0" max="100" value="25">
+          <label for="confidence">Central prediction range <output id="confidence-value"></output></label><input id="confidence" type="range" min="50" max="99" value="90">
+          <p class="hint">A wider range includes more simulated outcomes. This is separate from historical influence.</p>
+          <label class="check"><input id="history-enabled" type="checkbox"> Use historical calibration</label>
+          <div id="history-controls" hidden>
+            <label for="magnitude">Historical influence <output id="magnitude-value"></output></label><input id="magnitude" type="range" min="0" max="100" step="5" value="50">
+            <p class="hint">Blends the baseline with fitted draw frequency and team strength differences. At 100%, baseline draw probability has no effect.</p>
+            <details><summary>Choose historical tables</summary><div id="sources"><p>Loading historical file list…</p></div><label for="uploads">Add your CSV files</label><input id="uploads" type="file" accept=".csv,text/csv" multiple><p class="hint">Position, points, wins, draws, losses. No header. Files stay in your browser. Added files replace bundled files with the same name.</p></details>
+          </div>
+          <label for="seed">Random seed</label><input id="seed" type="number" min="0" max="2147483647" step="1" value="42" required><p class="hint">Keep the seed to reproduce a run; change it to sample another set of seasons.</p>
+        </fieldset>
+        <button id="run" type="submit">Simulate season <span aria-hidden="true">↗</span></button>
+        <button id="cancel" type="button" class="secondary" hidden>Cancel simulation</button>
+        <progress id="progress" max="100" hidden aria-label="Simulation progress"></progress>
+        <p id="status" role="status" aria-live="polite">Ready when you are. The first run downloads the Python runtime.</p>
+      </form></aside>
+      <div class="results-area">
+        <section id="empty" class="panel empty"><div class="pitch" aria-hidden="true"><span></span></div><p class="eyebrow">EVERY MATCH CHANGES THE TABLE</p><h2>One league. Many possible endings.</h2><p>Set your assumptions and run a simulation to explore the final standings.</p><div class="scoring"><span><b>3</b> win</span><span><b>1</b> draw</span><span><b>0</b> loss</span></div></section>
+        <div id="results" hidden>
+          <div class="result-heading"><div><p class="eyebrow">YOUR SEASON PROJECTION</p><h2>Points behind the positions</h2></div><button id="download" class="secondary" type="button">Download CSV ↓</button></div>
+          <p id="run-summary" class="hint"></p><p id="stale" class="notice" hidden>Settings changed. Run again to update these results.</p>
+          <div class="metrics"><div class="panel"><span>Simulated seasons</span><strong id="metric-runs"></strong></div><div class="panel"><span>Effective draw rate</span><strong id="metric-draw"></strong></div><div class="panel"><span>Strength spread</span><strong id="metric-strength"></strong></div></div>
+          <section class="panel chart-panel"><div class="section-title"><span class="step">02</span><h3>The projected table</h3></div><p id="range-explanation"></p><div class="chart-options"><label class="check"><input id="show-mean" type="checkbox"> Show mean</label><label class="check"><input id="show-benchmark" type="checkbox"> Show top-k benchmark</label></div><div class="chart-wrap"><canvas id="standings-chart" role="img" aria-label="Points range by finishing position; exact values in the table below"></canvas></div><p class="hint">The solid line is the median; the shaded band is the central prediction range. Overlapping ranges are normal. These are separate ranges for each rank, not a simultaneous band for the entire table.</p></section>
+          <section class="panel chart-panel"><div class="section-title"><span class="step">03</span><h3>Zoom into a position</h3></div><label for="focus-rank">Finishing position <output id="focus-rank-value">3</output></label><input id="focus-rank" type="range" min="1" max="11" value="3"><p id="focus-summary"></p><div class="chart-wrap histogram"><canvas id="distribution-chart" role="img" aria-label="Frequency of point totals for the selected finishing position"></canvas></div><p class="hint">Each bar shows how often that point total occurred at this position. It does not show the probability of finishing here given a points total.</p><details><summary>View distribution data</summary><div class="table-scroll"><table><thead><tr><th>Points</th><th>Seasons</th><th>Frequency</th></tr></thead><tbody id="distribution-body"></tbody></table></div></details></section>
+          <section class="panel"><h3>All positions, at a glance</h3><div class="table-scroll"><table><caption id="table-caption"></caption><thead><tr><th>Position</th><th>Mean</th><th>Median</th><th>Range</th><th>Top-k benchmark*</th></tr></thead><tbody id="standings-body"></tbody></table></div><p class="hint">* One point above the selected percentile of rank k’s points. A conservative comparison against simulated tables, not a qualification guarantee. Top n needs zero points. An asterisk marks an unattainable benchmark above the season maximum.</p></section>
+          <section class="panel"><h3>What this run assumes</h3><p id="assumptions"></p><div id="calibration-report"></div><p class="hint">Random tie-breaks for equal points. No home advantage, goal difference, current results or named-team ratings. Historical parameter uncertainty is not included in the ranges.</p></section>
+        </div>
+      </div>
+    </div>
+    <footer>Built for Bergamo Tornei Serie D. Simulations are planning references, not promises.</footer>
+  </main>
+  <noscript>This simulator needs JavaScript enabled.</noscript>
+</body>
+</html>
