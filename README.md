@@ -156,7 +156,7 @@ The current fit is a single parameter estimate. Prediction intervals include ran
 
 The files in `input/` are used when historical calibration is enabled (see below). Keep original files unchanged. Each row is expected to contain position, points, wins, draws, losses; trailing empty CSV fields can be ignored.
 
-Initial inspection found eight tables from five season labels, with 8 to 12 teams:
+The current inputs contain eight tables from five season labels, with 8 to 12 teams:
 
 | File | Teams | Games per team from W+D+L | Observation |
 | --- | ---: | --- | --- |
@@ -164,7 +164,7 @@ Initial inspection found eight tables from five season labels, with 8 to 12 team
 | 202223_SerieC.csv | 11 | 20 | Arithmetic checks pass |
 | 202324_SerieC.csv | 11 | 20 | Position 4 has 32 points but 13 wins and 3 draws imply 42 |
 | 202425_SerieC_A.csv | 10 | 18 | Arithmetic checks pass |
-| 202425_SerieC_B.csv | 10 | Unknown | Four populated fields per row; column meaning needs confirmation |
+| 202425_SerieC_B.csv | 10 | 18 | Corrected five-column data; arithmetic checks pass; included in calibration |
 | 202425_SerieC_C.csv | 10 | 18 | Arithmetic checks pass |
 | 202526_SerieD_A.csv | 12 | 20 to 22 | Positions 5 and 7 have 21 games, position 11 has 20; others have 22 |
 | 202526_SerieD_B.csv | 11 | 20 | Arithmetic checks pass |
@@ -173,7 +173,9 @@ Validation should check consecutive unique positions, nonnegative integer result
 
 For descriptive comparisons, use points per game and a 20-game equivalent (`20 * points / games`). Compare table shapes using relative rank `(position - 1) / (team_count - 1)`, with interpolation if needed. These are comparison tools, not a substitute for simulating the target format: shorter seasons have more sampling variability, and multiplying points does not preserve that uncertainty. Unequal schedules also affect opponent difficulty.
 
-Estimate match draw probability as `sum(draws) / sum(wins + draws + losses)` across team rows. Both numerator and denominator count each match twice, so the factors cancel. Use documented complete, comparable tables for an initial estimate. The four arithmetically consistent tables from 2022/23, 2024/25 A and C, and 2025/26 B contain 37 drawn matches out of 400 (9.25%). This is a provisional pooled rate, not yet the simulator default. Serie D B alone has 6 draws in 110 matches (5.45%).
+Estimate match draw probability as `sum(draws) / sum(wins + draws + losses)` across team rows. Both numerator and denominator count each match twice, so the factors cancel. The five eligible tables from 2022/23, 2024/25 A, B and C, and 2025/26 B contain 44 drawn matches out of 490 (8.98%). Corrected 2024/25 group B contributes 7 draws in 90 matches (7.78%). This pooled rate is used at full historical influence; the uncalibrated default remains 25%. Serie D B alone has 6 draws in 110 matches (5.45%).
+
+With these inputs, the fitted strength spread remains 1.80. At 50% historical influence the effective draw rate is 16.99% and strength spread is 0.90; at 100% they are 8.98% and 1.80. The 10,000-season forecast with seed 42 still has a champion median of 53 points at full calibration. Three tables remain excluded for the reasons listed above. The loader discovers corrected contents automatically, and the existing web manifest already includes group B, so no calibration-code or manifest change is needed. Rerun the browser simulation to fetch the corrected file and recompute its cached fit.
 
 The optional calibration model now fits both draw frequency and variation in team strength; the broader validation steps below remain future work. Assign anonymous teams latent strengths drawn from a common distribution, and make win probabilities depend on strength differences. Fit the spread of strengths by comparing simulated and historical table dispersion, top/bottom points, and rank profiles. Simulate each historical competition using its own team count and confirmed number of legs during fitting, then forecast the target with 11 teams and two legs. Do not treat final ranks as known preseason strength rankings or all observed points variation as strength variation.
 
