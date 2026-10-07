@@ -45,7 +45,7 @@ The repository root is already a static site with `index.html` and `.nojekyll`. 
 3. Push to `main`, or run **Refresh standings and deploy Pages** from the Actions tab. If your default branch has another name, update `.github/workflows/pages.yml`.
 4. Once deployment completes, visit the URL shown in Pages settings, usually `https://YOUR-USERNAME.github.io/YOUR-REPOSITORY/`.
 
-All local asset paths are relative, so a repository subpath works. The workflow fetches the default tournament's standings/calendars each day at 05:23 UTC, runs tests, and deploys only the static app and its snapshot. It does not commit generated snapshots back to Git. Scheduled workflows run on the default branch and can be delayed; always check the displayed fetch time. If fetching or tests fail, the previous deployment remains. See [GitHub scheduled workflow behavior](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#schedule). No publishing action has been executed in this workspace.
+All local asset paths are relative, so a repository subpath works. The workflow fetches the default tournament's standings/calendars each day at 05:23 UTC, runs tests, and deploys only the static app and its snapshot. It does not commit generated snapshots back to Git. Scheduled workflows run on the default branch and can be delayed; always check the displayed fetch time. Temporary source failures are retried; if all attempts fail, deployment can use the existing committed snapshot with its original timestamp and an explicit warning. Missing/invalid fallback data, parser errors and test failures still stop deployment. See [GitHub scheduled workflow behavior](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#schedule). No publishing action has been executed in this workspace.
 
 Branch-based Pages hosting also works, but snapshots then require manual refresh and commit. Do not enable both deployment methods. On static hosting without a proxy, the default URL loads the published snapshot; custom URLs require the proxy below or a JSON snapshot upload.
 
@@ -135,6 +135,22 @@ python live_fetch.py --url "https://www.bergamotornei.com/it/t-teamtable/154/cam
 ```
 
 The JSON contains all leagues and calendars and can be selected under **Import and connection options**. The default export is used by Pages without a proxy. With branch-based deployment, commit/push the updated file; with the included Actions workflow, it is generated during each deployment. The public source is fetched directly by the local exporter; no third-party scraping service is used.
+
+### Temporary source outages (HTTP 503)
+
+HTTP 503 during fetching means the public tournament server returned “Service Unavailable”. It does not by itself establish whether the cause is overload, maintenance or rate limiting. The fetcher makes up to four attempts per request for HTTP 408/429/500/502/503/504 and temporary connection/timeout failures. Retry delays are 2, 4 and 8 seconds, extended by a valid `Retry-After` header up to a 60-second cap. Permanent HTTP errors and source-layout/parser failures are not retried or silently hidden.
+
+The Pages workflow opts into fallback with:
+
+```powershell
+python live_fetch.py --output data/live.json --allow-stale
+```
+
+If retries fail, this validates the existing file's structure and tournament identity, retains the entire old snapshot and its `fetched_at`, and adds `refresh_warning` and `last_refresh_attempt`. The workflow logs a warning and the page displays it beside the source timestamp. Fresh standings are never combined with old calendars. A successful later refresh removes the failure metadata. Writes replace the snapshot atomically after a complete fetch or validated fallback.
+
+The fallback is the file available in the checkout, normally the **committed `data/live.json`**, not necessarily the last successfully deployed snapshot. Keep a usable snapshot committed. If it is absent, malformed or belongs to another tournament, deployment fails rather than presenting invalid data. Without `--allow-stale`, the CLI remains strict and fails if the remote source cannot be refreshed.
+
+After pushing this fix, run the Pages workflow again (a push to `main` also triggers it). Rerunning the old failed workflow without the updated code will still use the old behavior.
 
 ### Optional live proxy for GitHub Pages and custom URLs
 

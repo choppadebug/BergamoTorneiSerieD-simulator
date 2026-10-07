@@ -71,6 +71,7 @@
     const preferred = data.leagues.find(l => /SERIE D/i.test(l.name)); if (preferred) select.value = preferred.id;
     select.disabled = false;
     el('live-source').textContent = `${mode} · Fetched ${new Date(data.fetched_at).toLocaleString()} · ${data.source_url}`;
+    if (data.refresh_warning) el('live-source').textContent += ` · ${data.refresh_warning}`;
     if (Date.now() - Date.parse(data.fetched_at) > 36 * 3600000) el('live-source').textContent += ' · Older than 36 hours: refresh before relying on this forecast.';
     chooseLeague();
   }

@@ -4,13 +4,41 @@ from datetime import datetime, timezone
 import json
 from pathlib import Path
 import re
+import sys
+import time
+import os
+from tempfile import NamedTemporaryFile
+from email.utils import parsedate_to_datetime
+from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit, urlencode
-from urllib.request import Request, urlopen, HTTPRedirectHandler, build_opener
+from urllib.request import Request, HTTPRedirectHandler, build_opener
 
 from live_standings import parse_standings, parse_calendar, season_from_page
 
 DEFAULT_URL = 'https://www.bergamotornei.com/it/t-teamtable/154/campionato-nazionale-asi-bergamo-tornei-calcio-a-7/'
 ORIGIN = 'https://www.bergamotornei.com'
+TRANSIENT_STATUS = {408, 429, 500, 502, 503, 504}
+
+
+def transient(error):
+    if isinstance(error, HTTPError):
+        return error.code in TRANSIENT_STATUS
+    return isinstance(error, (URLError, TimeoutError, ConnectionError))
+
+
+def retry_delay(error, attempt):
+    delay = 2 ** (attempt + 1)
+    header = error.headers.get('Retry-After') if isinstance(error, HTTPError) and error.headers else None
+    if header:
+        try:
+            seconds = float(header)
+        except ValueError:
+            try:
+                seconds = (parsedate_to_datetime(header) - datetime.now(timezone.utc)).total_seconds()
+            except (TypeError, ValueError, OverflowError):
+                seconds = 0
+        delay = max(delay, seconds)
+    return min(60, delay)
 
 
 def validate_url(url):
@@ -31,11 +59,22 @@ class NoRedirect(HTTPRedirectHandler):
 def request(url, data=None):
     payload = urlencode(data).encode() if data else None
     req = Request(url, data=payload, headers={'User-Agent': 'BergamoLeagueSimulator/1.0'})
-    with build_opener(NoRedirect).open(req, timeout=25) as response:
-        content = response.read(4_000_001)
-        if len(content) > 4_000_000:
-            raise ValueError('Source response exceeds 4 MB')
-        return content.decode('utf-8')
+    opener = build_opener(NoRedirect)
+    for attempt in range(4):
+        try:
+            with opener.open(req, timeout=25) as response:
+                content = response.read(4_000_001)
+                if len(content) > 4_000_000:
+                    raise ValueError('Source response exceeds 4 MB')
+                return content.decode('utf-8')
+        except (HTTPError, URLError, TimeoutError, ConnectionError) as exc:
+            if not transient(exc) or attempt == 3:
+                raise
+            delay = retry_delay(exc, attempt)
+            print(f'Source temporarily unavailable ({exc}); retry {attempt+1}/3 in {delay:g}s', file=sys.stderr)
+            if isinstance(exc, HTTPError):
+                exc.close()
+            time.sleep(delay)
 
 
 def fetch_raw(url, round_id=None):
@@ -71,12 +110,69 @@ def snapshot(url):
             'season_start': season, 'leagues': leagues, 'calendars': calendars}
 
 
+def read_fallback(path, url):
+    data = json.loads(path.read_text(encoding='utf-8'))
+    if validate_url(data['source_url'])[0] != validate_url(url)[0]:
+        raise ValueError('Existing snapshot belongs to another tournament')
+    timestamp = datetime.fromisoformat(data['fetched_at'].replace('Z', '+00:00'))
+    if timestamp.tzinfo is None:
+        raise ValueError('Existing snapshot has no timezone in fetched_at')
+    leagues, calendars = data['leagues'], data['calendars']
+    if not isinstance(leagues, list) or not leagues or not isinstance(calendars, dict):
+        raise ValueError('Existing snapshot has no leagues/calendars')
+    if len({l['id'] for l in leagues}) != len(leagues):
+        raise ValueError('Existing snapshot has duplicate leagues')
+    for league in leagues:
+        if not league.get('name') or not isinstance(league.get('teams'), list) or len(league['teams']) < 2:
+            raise ValueError('Existing snapshot has invalid teams')
+        matches = calendars[league['id']]
+        if not isinstance(matches, list) or not matches:
+            raise ValueError('Existing snapshot is missing a calendar')
+        for team in league['teams']:
+            if not team.get('name') or any(type(team.get(k)) is not int for k in
+                    ('position', 'points', 'played', 'wins', 'draws', 'losses', 'goals_for', 'goals_against', 'goal_difference', 'fair_play')):
+                raise ValueError('Existing snapshot has an invalid team row')
+        for match in matches:
+            if not all(k in match for k in ('id', 'home', 'away', 'home_goals', 'away_goals')):
+                raise ValueError('Existing snapshot has an invalid fixture')
+    return data
+
+
+def write_snapshot(path, data):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = None
+    try:
+        with NamedTemporaryFile(mode='w', encoding='utf-8', dir=path.parent, suffix='.tmp', delete=False) as output:
+            temporary = Path(output.name)
+            json.dump(data, output, ensure_ascii=False, indent=2)
+            output.write('\n')
+        temporary.replace(path)
+    finally:
+        if temporary and temporary.exists():
+            temporary.unlink()
+
+
+def refresh(url, output, allow_stale=False):
+    try:
+        data = snapshot(url)
+    except (HTTPError, URLError, TimeoutError, ConnectionError) as exc:
+        if not allow_stale or not transient(exc):
+            raise
+        # Never mix newly fetched standings with old fixture lists.
+        data = read_fallback(output, url)
+        data['refresh_warning'] = f'Live refresh failed ({exc}). Using the existing snapshot from {data["fetched_at"]}.'
+        data['last_refresh_attempt'] = datetime.now(timezone.utc).isoformat()
+        prefix = '::warning::' if os.environ.get('GITHUB_ACTIONS') == 'true' else 'WARNING: '
+        print(prefix + data['refresh_warning'].replace('\n', ' ').replace('\r', ' '), file=sys.stderr)
+    write_snapshot(output, data)
+    print(f"Saved {len(data['leagues'])} leagues to {output}; source fetched {data['fetched_at']}")
+    return data
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--url', default=DEFAULT_URL)
     parser.add_argument('--output', type=Path, default=Path('data/live.json'))
+    parser.add_argument('--allow-stale', action='store_true', help='On temporary network failure, use a validated existing snapshot and keep its original fetch time')
     args = parser.parse_args()
-    data = snapshot(args.url)
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding='utf-8')
-    print(f"Saved {len(data['leagues'])} leagues to {args.output}")
+    refresh(args.url, args.output, args.allow_stale)

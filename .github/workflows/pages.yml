@@ -25,7 +25,7 @@ jobs:
           python-version: '3.12'
       - run: python -m unittest -v
       - name: Fetch current public standings and calendars
-        run: python live_fetch.py --output data/live.json
+        run: python live_fetch.py --output data/live.json --allow-stale
       - name: Prepare static site
         run: |
           mkdir _site
