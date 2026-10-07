@@ -1,0 +1,6 @@
+{
+  "name": "bergamo-standings-proxy",
+  "main": "worker.mjs",
+  "compatibility_date": "2026-10-07",
+  "vars": { "ALLOWED_ORIGIN": "https://YOUR-USERNAME.github.io" }
+}

@@ -12,6 +12,20 @@ _fit_cache = {}
 
 def run_web(payload_json, report=None):
     payload = json.loads(payload_json)
+    action = payload.get('action')
+    if action == 'parse_standings':
+        from live_standings import parse_standings, season_from_page
+        raw = payload['raw']
+        return json.dumps({'kind': 'live_standings', 'leagues': parse_standings(raw['page_html'], raw['standings_html']),
+                           'season_start': season_from_page(raw['page_html']),
+                           'source_url': raw['source_url'], 'fetched_at': raw['fetched_at']})
+    if action == 'parse_calendar':
+        from live_standings import parse_calendar
+        return json.dumps({'kind': 'live_calendar', 'matches': parse_calendar(payload['raw']['calendar_html'], payload.get('season_start'))})
+    if action == 'project_live':
+        from live_projection import project_live
+        return json.dumps(project_live(Config(**payload['config']), payload['league'], payload['matches'],
+                                       prior_games=payload.get('prior_games', 6), report=report))
     config = Config(**payload['config'])
     magnitude = payload.get('magnitude', 0)
     if not 0 <= magnitude <= 1:

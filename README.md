@@ -7,12 +7,12 @@ A dependency-free Python Monte Carlo simulator for end-of-season points by finis
 From the repository root:
 
 ```powershell
-python -m http.server 8000 --bind 127.0.0.1
+python serve.py --port 8000
 ```
 
-Open **http://127.0.0.1:8000** in a modern browser. Stop the server with `Ctrl+C`. Use HTTP instead of double-clicking `index.html`: browser workers and source loading require a served site.
+Open **http://127.0.0.1:8000** in a modern browser. Stop the server with `Ctrl+C`. This server serves the static app and a restricted `/api/live` proxy for public Bergamo standings. Use HTTP instead of double-clicking `index.html`: browser workers and source loading require a served site. `python -m http.server 8000 --bind 127.0.0.1` still serves the baseline, but does not provide the live import endpoint.
 
-No npm install, build step, or application server is required. The site runs the actual `league_simulator.py` and `historical_calibration.py` in a [Pyodide](https://pyodide.org/en/stable/usage/webworker.html) module worker, keeping the page responsive. [Chart.js](https://www.chartjs.org/docs/latest/charts/line.html) renders the charts. Dependencies are pinned to Pyodide 314.0.7 and Chart.js 4.5.1 on jsDelivr. The first run downloads the Python runtime and needs internet access; subsequent runs reuse it. Fonts load from Google Fonts with local fallbacks. This is not an offline app.
+No npm install or frontend build step is required. The site runs the actual Python simulation modules in a [Pyodide](https://pyodide.org/en/stable/usage/webworker.html) module worker, keeping the page responsive. [Chart.js](https://www.chartjs.org/docs/latest/charts/line.html) renders the charts. Dependencies are pinned to Pyodide 314.0.7 and Chart.js 4.5.1 on jsDelivr. The first run downloads the Python runtime and needs internet access; subsequent runs reuse it. Fonts load from Google Fonts with local fallbacks. This is not an offline app. Live remote imports need the local server or the optional hosted proxy; a published snapshot works entirely on static hosting.
 
 ### Controls and results
 
@@ -41,22 +41,24 @@ Click **Simulate season** to run. Settings are locked while working. Cancel term
 The repository root is already a static site with `index.html` and `.nojekyll`. Follow [GitHub's Pages setup instructions](https://docs.github.com/en/pages/getting-started-with-github-pages/creating-a-github-pages-site):
 
 1. Commit and push these files to your GitHub repository. Keep the Python modules and `input/` alongside the web files.
-2. In **Settings → Pages → Build and deployment**, select **Deploy from a branch**.
-3. Select your publishing branch (usually `main`) and **/(root)**, then save.
+2. In **Settings → Pages → Build and deployment**, select **GitHub Actions** to use the included daily refresh/deployment workflow.
+3. Push to `main`, or run **Refresh standings and deploy Pages** from the Actions tab. If your default branch has another name, update `.github/workflows/pages.yml`.
 4. Once deployment completes, visit the URL shown in Pages settings, usually `https://YOUR-USERNAME.github.io/YOUR-REPOSITORY/`.
 
-All local asset paths are relative, so a repository subpath works. No API keys, backend service, or Actions workflow is needed. The repository has not been published automatically.
+All local asset paths are relative, so a repository subpath works. The workflow fetches the default tournament's standings/calendars each day at 05:23 UTC, runs tests, and deploys only the static app and its snapshot. It does not commit generated snapshots back to Git. Scheduled workflows run on the default branch and can be delayed; always check the displayed fetch time. If fetching or tests fail, the previous deployment remains. See [GitHub scheduled workflow behavior](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#schedule). No publishing action has been executed in this workspace.
+
+Branch-based Pages hosting also works, but snapshots then require manual refresh and commit. Do not enable both deployment methods. On static hosting without a proxy, the default URL loads the published snapshot; custom URLs require the proxy below or a JSON snapshot upload.
 
 If Git is already configured for the repository, review changes and publish with:
 
 ```powershell
 git status
-git add index.html styles.css app.js worker.js web_runner.py league_simulator.py historical_calibration.py input/ .nojekyll update_manifest.py test_web_runner.py README.md
+git add index.html styles.css app.js live.js worker.js web_runner.py league_simulator.py historical_calibration.py live_standings.py live_projection.py live_fetch.py serve.py live-config.json input/ data/ proxy/ .github/workflows/pages.yml .nojekyll update_manifest.py test_web_runner.py test_live.py README.md
 git commit -m "Add browser season simulator for GitHub Pages"
 git push origin main
 ```
 
-Replace `main` with your publishing branch. This workspace did not have a Git repository when the web app was added. For a new repository, first create an empty repository on GitHub, then run the following before the add/commit commands above:
+Replace `main` with your publishing branch. For a new checkout without Git, first create an empty repository on GitHub, then run the following before the add/commit commands above (skip these if Git is already configured):
 
 ```powershell
 git init -b main
@@ -79,6 +81,8 @@ Changes to existing CSV contents need no manifest update. New or corrected sourc
 python -m unittest -v
 node --check app.js
 node --check worker.js
+node --check live.js
+node --check proxy/worker.mjs
 ```
 
 Node is optional and used here only for JavaScript syntax checks. The Python tests check that web results match native results and that each rank's histogram accounts for every simulated season.
@@ -86,6 +90,71 @@ Node is optional and used here only for JavaScript syntax checks. The Python tes
 For a browser smoke test, run the local server, simulate the default 10,000 seasons (champion median 37), enable full historical influence with all bundled files (current champion median 53), inspect exclusions, change the selected position, and download the CSV. Change settings and verify the stale-result notice. Start a longer run, cancel, then rerun. Check narrow/mobile layout and keyboard control access. To exercise repository-subpath hosting locally, serve the parent directory and navigate to this repository's folder URL.
 
 If dependencies fail to load, check access to jsDelivr and reload. Browser errors appear next to the run button. A calibration run with no eligible selected tables reports an error rather than silently falling back to the baseline.
+
+## Current-season projections
+
+After completing a baseline simulation, the **Project the rest of your season** section becomes available:
+
+1. Keep the default [2026/27 tournament URL](https://www.bergamotornei.com/it/t-teamtable/154/campionato-nazionale-asi-bergamo-tornei-calcio-a-7/) or enter another Bergamo Tornei standings URL.
+2. Click **Load / refresh standings**. The source and fetch time are always shown. On local `serve.py` or with a configured hosted proxy, this fetches the source now. On GitHub Pages without a proxy, the default URL uses `data/live.json`, explicitly labeled as a snapshot. Snapshots older than 36 hours are flagged.
+3. Choose a league, then a team in that league. All imported columns are available in the expandable standings table.
+4. Check the number of legs and choose the prior-strength slider. Click **Project remaining season**. The completed baseline supplies simulation count, confidence, seed and the effective draw prior; the selected league supplies the actual team count.
+5. Inspect final-position probabilities, updated rank points ranges, and projected accumulated points by scheduled date. Change teams or the comparison rank without rerunning. Download a team forecast CSV with source and run metadata.
+
+Refresh the source after new results to get a new conditional forecast. The future trajectory is a forecast from one snapshot, not observed future data or a forecast of how final-position probabilities will change after unknown outcomes. Scheduled dates are not guaranteed match dates.
+
+### What is imported and how it is linked
+
+The source page is an AJAX shell. Its public `system/include/ajax/public/league.php` endpoint uses `op=20&tid=...&round=all` for standings and `op=22&tid=...&round=LEAGUE_ID` for the full calendar. The standings markup has `.standing-table-title` followed by `.tables-container`. Team names/positions are in its `.left-table`; stat rows are in the matching `.right-table`. The parser pairs these rows only inside the same container and reads stat columns by their headers. It matches the league title to the page's `select[name=round]` options to obtain the calendar ID.
+
+The calendar includes completed scores, unplayed matches and explicit `Turno di riposo` byes. Byes are skipped. A numeric 0–0 is a completed draw; an empty score pane is unplayed. Unsupported statuses are rejected. Dates are interpreted within the source's July–June season (e.g. October 2026 and January 2027 for 2026/27). Dates without enough information remain undated and are grouped last.
+
+Custom links currently mean other `/it/t-teamtable/ID/name/` pages on `bergamotornei.com`, not arbitrary websites with unrelated schemas. Fetchers restrict requests to this public host and known standings/calendar operations and reject redirects.
+
+### Forecast model and data checks
+
+- **Pt:** official points are the starting totals. Any difference from `3V + N` is preserved and reported as a points adjustment.
+- **G/V/N/P:** validate games/results against completed calendar fixtures and estimate strength from a shrunk win/loss ratio. The prior contributes half a win and half a loss per equivalent game, tempering early extremes.
+- **F/S:** a shrunk scoring/conceding ratio contributes 35% of the strength estimate; the result ratio contributes 65%. This is a transparent heuristic, not a trained weight. The scoring prior is pooled from current goals, with a starting assumption of 2.5 goals per team-game.
+- **+/−:** checked against F minus S; it is not counted again as independent evidence.
+- **FP:** imported as fair play and displayed. It does not affect strength or tie-breaks because those rules have not been confirmed.
+
+Live team strengths replace the baseline's anonymous randomly drawn strengths and stay fixed during simulation. Historical calibration informs the baseline draw prior; its anonymous strength-spread parameter is not reused as a named-team rating. The live draw rate pools observed draws with 20 prior matches at the baseline effective draw rate. Conditional decisive-match probabilities use the logistic difference between the two shrunk team strengths. No home advantage or opponent adjustment is fitted. These choices need backtesting before claiming an accuracy improvement.
+
+Only actual remaining fixtures are simulated, starting from the official points totals. Every pairing must occur the selected number of times in the complete calendar; completed games, wins/draws/losses and goals must reconcile with the table. No synthetic fixtures are added to fix missing data. Inconsistencies block that league's forecast with a specific error. In the initial 7 October 2026 snapshot, seven leagues reconcile, including all four Serie D groups; Serie B is blocked because Prezzatese's calendar wins disagree with its table. A later refreshed source may resolve this.
+
+Future equal-points ties use random ordering. A fully completed, reconciled season retains the official imported order. Official future goal-difference/head-to-head/fair-play tie-breaks and uncertainty in estimated strengths are not modeled. Prediction ranges reflect match-result variability conditional on the estimates.
+
+The selected team's final-position bars sum to 100% before rounding. The table also reports its points range **conditional on finishing at each rank**, along with the number of supporting simulations. Rare ranks can have unstable ranges or no samples. The day-by-day chart compares the selected team's accumulated points with points held by a chosen rank at each scheduled date; it is not a final-rank cutoff at that date.
+
+### Refresh or export a snapshot
+
+```powershell
+python live_fetch.py --output data/live.json
+python live_fetch.py --url "https://www.bergamotornei.com/it/t-teamtable/154/campionato-nazionale-asi-bergamo-tornei-calcio-a-7/" --output output/my-tournament.json
+```
+
+The JSON contains all leagues and calendars and can be selected under **Import and connection options**. The default export is used by Pages without a proxy. With branch-based deployment, commit/push the updated file; with the included Actions workflow, it is generated during each deployment. The public source is fetched directly by the local exporter; no third-party scraping service is used.
+
+### Optional live proxy for GitHub Pages and custom URLs
+
+The source does not return `Access-Control-Allow-Origin`, so a GitHub Pages browser cannot directly read its responses. The supplied [Cloudflare Worker proxy](https://developers.cloudflare.com/workers/examples/cors-header-proxy/) is a small, restricted bridge; simulation still happens in the browser.
+
+1. Set `ALLOWED_ORIGIN` in `proxy/wrangler.jsonc` to your Pages origin, e.g. `https://YOUR-USERNAME.github.io` (no repository path).
+2. With a Cloudflare account and Node.js available, deploy from the project root:
+
+```powershell
+npx wrangler login
+npx wrangler deploy --config proxy/wrangler.jsonc
+```
+
+3. Put the returned HTTPS Worker URL in `live-config.json` as `proxy_url`, then redeploy the static app. Alternatively enter it in the page's **Live proxy endpoint** field for that session.
+
+```json
+{"proxy_url": "https://bergamo-standings-proxy.YOUR-SUBDOMAIN.workers.dev/"}
+```
+
+The proxy has not been deployed automatically. Local development with `python serve.py` needs no Cloudflare setup. If a user opens the page with the old plain `http.server`, stop it and use `serve.py` to enable live imports.
 
 ## Run
 
@@ -121,14 +190,14 @@ These ranges describe season-to-season variability under the model, not confiden
 
 ## Useful next parameters
 
-1. **Team strength:** ratings or past results to give each fixture different win/draw/loss probabilities. This is the most useful next step toward representing a specific league.
-2. **Actual draw frequency:** estimate from previous seasons instead of using the initial 25% assumption.
-3. **Current table and remaining fixtures:** preserve completed results and simulate only the rest of the season.
+1. **Opponent-adjusted team strength:** improve the current aggregate-results heuristic with match-level ratings and backtesting.
+2. **Draw frequency by matchup:** extend the historical/current pooled draw rate to reflect differences between opponents.
+3. **Forecast evaluation over time:** retain dated snapshots and compare predictions against later results to measure accuracy and interval coverage.
 4. **Home advantage:** if venue or home status matters in this league.
 5. **Goals and official tie-break rules:** simulate scorelines and resolve equal points according to league rules.
 6. **Form and availability:** injuries, absences, roster changes, or changing strength over the season.
 
-Once named teams and their strengths are included, we can report each team's finish probabilities and estimate the probability of a top-k finish given a particular points total.
+Current-season mode now reports named teams' finishing probabilities. Estimating a top-k finish conditional on a specific points total, and validating its reliability, remain possible extensions.
 
 ## Historical standings: proposed calibration
 

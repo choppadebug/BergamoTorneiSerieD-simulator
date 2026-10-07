@@ -8,6 +8,7 @@
   <link rel="stylesheet" href="styles.css">
   <script defer src="https://cdn.jsdelivr.net/npm/chart.js@4.5.1/dist/chart.umd.min.js"></script>
   <script defer src="app.js"></script>
+  <script defer src="live.js"></script>
 </head>
 <body>
   <header><div class="brand-mark" aria-hidden="true">BT</div><div><strong>BERGAMO TORNEI</strong><span>Serie D · 7-a-side football</span></div><span class="header-note">Season simulator</span></header>
@@ -50,6 +51,35 @@
         </div>
       </div>
     </div>
+    <section id="live-section" class="panel live-section" hidden>
+      <p class="eyebrow">FROM A BASELINE TO YOUR TEAM</p><h2>Project the rest of your season</h2>
+      <p>Import the current table, choose your league and team, then simulate only the fixtures still to play.</p>
+      <fieldset id="live-controls"><legend class="sr-only">Current-season controls</legend>
+        <label for="live-url">Bergamo Tornei standings URL</label><input id="live-url" type="url" value="https://www.bergamotornei.com/it/t-teamtable/154/campionato-nazionale-asi-bergamo-tornei-calcio-a-7/">
+        <button id="live-load" type="button">Load / refresh standings</button>
+        <details><summary>Import and connection options</summary>
+          <label for="live-proxy">Live proxy endpoint (optional)</label><input id="live-proxy" type="url" placeholder="https://bergamo-standings-proxy.example.workers.dev/">
+          <p class="hint">The local server connects directly. GitHub Pages uses the dated default snapshot unless a proxy is configured. A custom URL needs a proxy or a snapshot exported for that tournament. Setup commands are in the README.</p>
+          <label for="live-file">Import standings snapshot (.json)</label><input id="live-file" type="file" accept=".json,application/json">
+        </details>
+        <div class="live-grid"><div><label for="live-league">League</label><select id="live-league" disabled><option>Load standings first</option></select></div><div><label for="live-team">Your team</label><select id="live-team" disabled><option>Select a league first</option></select></div></div>
+        <div class="live-grid"><div><label for="live-prior">Prior strength (equivalent games) <output id="live-prior-value">6</output></label><input id="live-prior" type="range" min="1" max="20" value="6"><p class="hint">Higher values temper early-season results and goal differences more strongly.</p></div><div><label for="live-legs">League legs</label><select id="live-legs"><option value="1">1</option><option value="2" selected>2</option><option value="3">3</option><option value="4">4</option></select><p class="hint">The calendar must contain this many meetings per pair. Team count comes from your selected league.</p></div></div>
+        <button id="live-project" type="button" disabled>Project remaining season</button>
+      </fieldset>
+      <button id="live-cancel" type="button" class="secondary" hidden>Cancel</button><progress id="live-progress" max="100" hidden aria-label="Current-season simulation progress"></progress>
+      <p id="live-status" role="status" aria-live="polite">Uses the simulation count, confidence, seed and effective draw prior from your completed baseline run.</p>
+      <p id="live-source" class="hint"></p>
+      <details id="live-current" hidden><summary>Imported standings: Pt, G, V, N, P, F, S, +/−, FP</summary><div class="table-scroll"><table><thead><tr><th>Team</th><th>Pt</th><th>G</th><th>V</th><th>N</th><th>P</th><th>F</th><th>S</th><th>+/−</th><th>FP</th></tr></thead><tbody id="live-current-body"></tbody></table></div></details>
+      <div id="live-results" hidden>
+        <p id="live-stale" class="notice" hidden>Inputs changed. Project again to update this forecast.</p><p id="live-summary"></p>
+        <div class="live-grid"><section><h3>Your team's finishing chances</h3><div class="chart-wrap"><canvas id="live-chances-chart" role="img" aria-label="Selected team's probability of each final position"></canvas></div><p class="hint">These probabilities are conditional on the imported results, schedule and model assumptions. They sum to 100% before rounding.</p></section><section><h3>Final points for each position</h3><div class="chart-wrap"><canvas id="live-final-chart" role="img" aria-label="Updated final points ranges by position"></canvas></div><p class="hint">Median and central prediction range for the points occupying each final rank. This is separate from your team's chances of that rank.</p></section></div>
+        <section><h3>Points as the remaining fixtures unfold</h3><label for="live-rank">Compare with table position <output id="live-rank-value">3</output></label><input id="live-rank" type="range" min="1" max="11" value="3"><div class="chart-wrap"><canvas id="live-timeline-chart" role="img" aria-label="Projected accumulated points by scheduled date for your team and a selected table position"></canvas></div><p class="hint">A forecast from the current snapshot, not future observed results. Dates are scheduled fixture dates; undated games appear last. The comparison is the points held by that rank on each date, not the points needed for that final rank. Refresh the standings after new results to update final-position probabilities.</p></section>
+        <h3 id="live-table-title">Position-by-position forecast</h3><div class="table-scroll"><table><thead><tr><th>Finish</th><th>Your chance</th><th>Rank median</th><th>Rank range</th><th>Your points if here*</th><th>Extra for benchmark†</th></tr></thead><tbody id="live-forecast-body"></tbody></table></div>
+        <p class="hint">* Central points range among simulations where your team finished here. Rare finishes have few samples; “no samples” means none occurred, not impossibility. † Additional points to exceed the selected percentile of rank k's final points; a planning benchmark, not a qualification guarantee. “Unattainable” exceeds your team's remaining points ceiling.</p>
+        <button id="live-download" type="button" class="secondary">Download team forecast CSV</button>
+        <div id="live-warnings" class="hint"></div><p class="hint">Current Pt (including adjustments) are preserved. G/V/N/P and goals inform strengths; +/− is checked against F−S. FP is imported as fair play but has no predictive effect. Future points ties use random ordering; official head-to-head and fair-play tie-breaks are not modeled. No validated accuracy improvement is claimed.</p>
+      </div>
+    </section>
     <footer>Built for Bergamo Tornei Serie D. Simulations are planning references, not promises.</footer>
   </main>
   <noscript>This simulator needs JavaScript enabled.</noscript>

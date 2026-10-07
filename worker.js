@@ -2,7 +2,7 @@ let runtime;
 async function initialize() {
   const { loadPyodide } = await import('https://cdn.jsdelivr.net/pyodide/v314.0.7/full/pyodide.mjs');
   const py = await loadPyodide();
-  for (const name of ['league_simulator.py', 'historical_calibration.py', 'web_runner.py']) {
+  for (const name of ['league_simulator.py', 'historical_calibration.py', 'live_standings.py', 'live_projection.py', 'web_runner.py']) {
     const response = await fetch(new URL(name, self.location.href));
     if (!response.ok) throw new Error(`Cannot load ${name}: HTTP ${response.status}`);
     py.FS.writeFile(name, await response.text());

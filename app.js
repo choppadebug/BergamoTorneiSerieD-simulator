@@ -31,6 +31,7 @@ $('uploads').addEventListener('change', () => {
   for (const file of $('uploads').files) uploads.set(file.name, file);
 });
 function busy(value) {
+  document.dispatchEvent(new CustomEvent('baseline-busy', { detail: value }));
   $('settings').disabled = value; $('run').disabled = value; $('cancel').hidden = !value;
   $('progress').hidden = !value;
   if (value) $('progress').removeAttribute('value');
@@ -151,6 +152,7 @@ function render() {
     if (calibration.strength_spread === 4) { const warning = document.createElement('p'); warning.className = 'notice'; warning.textContent = 'The fit reached its search boundary (4.0). Treat this calibration cautiously.'; $('calibration-report').append(warning); }
   }
   renderStandings(); renderDistribution();
+  document.dispatchEvent(new CustomEvent('baseline-complete', { detail: result.config }));
 }
 $('focus-rank').addEventListener('input', renderDistribution);
 for (const id of ['show-mean', 'show-benchmark']) $(id).addEventListener('change', () => { if (result) renderStandings(); });
