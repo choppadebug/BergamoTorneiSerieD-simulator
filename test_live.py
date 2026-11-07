@@ -57,12 +57,48 @@ class LiveProjectionTests(unittest.TestCase):
         self.assertIn('-2', result['warnings'][0])
         self.assertEqual(result['timeline'][0]['teams'][0]['median_points'], 1)
 
-    def test_incomplete_or_inconsistent_calendar_rejected(self):
+    def test_incomplete_calendar_rejected(self):
         league, fixtures = sample()
         with self.assertRaisesRegex(ValueError, 'complete round robin'):
             validate_snapshot(league['teams'], fixtures[:1], 2)
-        fixtures[0]['home_goals'] = 3
-        with self.assertRaisesRegex(ValueError, 'goals_for'):
+
+    def test_calendar_result_disagreement_uses_standings(self):
+        league, fixtures = sample()
+        baseline = project_live(Config(simulations=100), league, fixtures)
+        fixtures[0].update(home_goals=0, away_goals=3)
+        result = project_live(Config(simulations=100), league, fixtures)
+        self.assertEqual(result['rows'], baseline['rows'])
+        self.assertEqual(result['teams'], baseline['teams'])
+        self.assertEqual(result['remaining_fixtures'], 1)
+        self.assertEqual(len(result['data_warnings']), 2)
+        self.assertIn('wins: calendar=0, standings=1', result['data_warnings'][0])
+        self.assertIn('goals_for: calendar=0, standings=2', result['data_warnings'][0])
+
+    def test_river_dello_wins_mismatch_through_web_bridge(self):
+        league, _ = sample()
+        a, b = league['teams']
+        a.update(name='River Dello', played=6, wins=5, draws=0, losses=1, points=15,
+                 goals_for=5, goals_against=1, goal_difference=4)
+        b.update(played=6, wins=1, draws=0, losses=5, points=3,
+                 goals_for=1, goals_against=5, goal_difference=-4)
+        scores = [(1, 0)]*4 + [(0, 0), (0, 1), (None, None), (None, None)]
+        fixtures = [dict(id=str(i), home='River Dello', away='B', home_goals=x, away_goals=y,
+                         date='2026-11-10') for i, (x, y) in enumerate(scores)]
+        result = json.loads(run_web(json.dumps(dict(action='project_live', config={'simulations': 100, 'legs': 8}, league=league, matches=fixtures))))
+        self.assertIn('wins: calendar=4, standings=5', result['data_warnings'][0])
+        self.assertEqual(result['teams'][0]['current']['wins'], 5)
+        self.assertEqual(result['teams'][0]['current']['points'], 15)
+        self.assertEqual(result['teams'][0]['remaining_games'], 2)
+        self.assertEqual(result['remaining_fixtures'], 2)
+        self.assertAlmostEqual(sum(f['probability'] for f in result['teams'][0]['finishes']), 1)
+
+    def test_invalid_standings_still_rejected(self):
+        league, fixtures = sample()
+        league['teams'][0]['wins'] = -1
+        with self.assertRaisesRegex(ValueError, 'nonnegative'):
+            validate_snapshot(league['teams'], fixtures, 2)
+        league['teams'][0]['wins'] = 2
+        with self.assertRaisesRegex(ValueError, 'must equal played'):
             validate_snapshot(league['teams'], fixtures, 2)
 
     def test_zero_zero_is_completed(self):

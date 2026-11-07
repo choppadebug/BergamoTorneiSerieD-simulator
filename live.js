@@ -160,8 +160,12 @@
     chancesChart = new Chart(el('live-chances-chart'), { type: 'bar', data: { labels: t.finishes.map(f => f.position), datasets: [{ label: 'Finishing chance (%)', data: t.finishes.map(f => f.probability * 100), backgroundColor: '#087f72' }] }, options: chartOptions('Probability (%)', 'Final position') });
     finalChart = new Chart(el('live-final-chart'), { type: 'line', data: { labels: forecast.rows.map(r => r.position), datasets: band('Final points', forecast.rows, '#087f72') }, options: chartOptions('Points', 'Final position') });
     fillTable(el('live-forecast-body'), forecastRows());
+    const dataWarnings = forecast.data_warnings || [];
+    el('live-data-warnings').replaceChildren();
+    el('live-data-warnings').hidden = !dataWarnings.length;
+    for (const warning of dataWarnings) { const p = document.createElement('p'); p.textContent = warning; el('live-data-warnings').append(p); }
     el('live-warnings').replaceChildren();
-    for (const warning of forecast.warnings) { const p = document.createElement('p'); p.textContent = warning; el('live-warnings').append(p); }
+    for (const warning of forecast.warnings.filter(w => !dataWarnings.includes(w))) { const p = document.createElement('p'); p.textContent = warning; el('live-warnings').append(p); }
     renderTimeline();
   }
   el('live-rank').addEventListener('input', renderTimeline);

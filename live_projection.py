@@ -1,4 +1,4 @@
-"""Conditional remainder-of-season projections from reconciled standings/fixtures."""
+"""Conditional projections using authoritative standings and checked fixtures."""
 from collections import Counter, defaultdict
 from dataclasses import replace, asdict
 import math
@@ -38,8 +38,17 @@ def validate_snapshot(teams, matches, legs):
             if type(team.get(key)) is not int:
                 raise ValueError(f"{team['name']}: missing or non-integer {key}")
         for key in ('played', 'wins', 'draws', 'losses', 'goals_for', 'goals_against'):
-            if team[key] < 0 or team[key] != actual[key]:
-                raise ValueError(f"{team['name']}: calendar {key}={actual[key]} but standings {key}={team[key]}. Refresh or check postponed/awarded matches.")
+            if team[key] < 0:
+                raise ValueError(f"{team['name']}: standings {key} must be nonnegative")
+        if team['played'] != actual['played']:
+            raise ValueError(f"{team['name']}: calendar played={actual['played']} but standings played={team['played']}. Cannot identify the remaining fixtures safely; refresh or check postponed/awarded matches.")
+        if team['wins'] + team['draws'] + team['losses'] != team['played']:
+            raise ValueError(f"{team['name']}: standings wins + draws + losses must equal played games")
+        differences = [f"{key}: calendar={actual[key]}, standings={team[key]}"
+                       for key in ('wins', 'draws', 'losses', 'goals_for', 'goals_against')
+                       if team[key] != actual[key]]
+        if differences:
+            adjustments.append(f"{team['name']}: using standings values despite calendar discrepancies ({'; '.join(differences)}). Projection continues with official points and standings-based strength estimates.")
         if team['goal_difference'] != team['goals_for'] - team['goals_against']:
             raise ValueError(f"{team['name']}: goal difference does not reconcile")
         adjustment = team['points'] - 3*team['wins'] - team['draws']
@@ -72,6 +81,7 @@ def project_live(config, league, matches, *, prior_games=6, report=None):
     if not 1 <= prior_games <= 30:
         raise ValueError('Prior games must be between 1 and 30')
     names, warnings = validate_snapshot(teams, matches, config.legs)
+    data_warnings = warnings.copy()
     remaining = [m for m in matches if m['home_goals'] is None]
     remaining.sort(key=lambda m: (m.get('date') or '9999', m['id']))
     groups = defaultdict(list)
@@ -147,6 +157,7 @@ def project_live(config, league, matches, *, prior_games=6, report=None):
     return {'kind': 'live_projection', 'config': asdict(config), 'league': league['name'],
             'rows': rows, 'teams': details, 'remaining_fixtures': len(remaining),
             'effective_draw_probability': draw_rate, 'prior_games': prior_games, 'warnings': warnings,
+            'data_warnings': data_warnings,
             'timeline': [{'date': date, 'positions': [summary(c, config.confidence) for c in ranks],
                           'teams': [summary(c, config.confidence) for c in ts]}
                          for date, ranks, ts in zip(dates, timeline_ranks, timeline_teams)]}
